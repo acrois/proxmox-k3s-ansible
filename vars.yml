@@ -1,0 +1,8 @@
+---
+vm_name: ProxmoxVM
+vm_memory: 16GB
+vm_disk_path: C:\Hyper-V\ProxmoxVM\disk.vhdx
+vm_disk_size: 50GB
+iso_download_path: C:\Users\Public\Downloads\proxmox-ve_8.2-1.iso
+switch_name: Default Switch
+proxmox_iso_url: https://download.proxmox.com/iso/proxmox-ve_8.2-1.iso
