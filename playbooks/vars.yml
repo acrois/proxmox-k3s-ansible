@@ -1,0 +1,28 @@
+---
+vm_name: ProxmoxVM
+vm_memory: 16GB
+vm_disk_path: C:\Hyper-V\ProxmoxVM\disk.vhdx
+vm_disk_size: 50GB
+switch_name: Default Switch
+proxmox_version: 8.2-1
+proxmox_source: download # "download" (community) or "enterprise"
+iso_filename: "proxmox-ve_{{ proxmox_version }}.iso"
+proxmox_iso_url: https://{{ proxmox_source }}.proxmox.com/iso/{{ iso_filename }}
+prepared_iso_path: C:\Users\NULL\Downloads\proxmox-ve_{{ proxmox_version }}_prepared.iso
+proxmox_answer:
+  global:
+    keyboard: "en-us"
+    country: "US"
+    fqdn: "proxmox.acrois.dev"
+    mailto: "admin@acrois.dev"
+    timezone: "America/New_York"
+    root_password: "{{ proxmox_root_password }}"
+  network:
+    source: "from-answer"
+    cidr: "192.168.1.100/24"
+    dns: "1.1.1.1"
+    gateway: "192.168.1.1"
+  disk-setup:
+    filesystem: "ext4"
+    disk_list:
+      - "sda"

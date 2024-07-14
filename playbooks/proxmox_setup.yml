@@ -1,0 +1,115 @@
+---
+- name: Setup Proxmox VE on Hyper-V
+  hosts: hyperv
+  become: yes
+  become_user: "null"
+  become_method: runas
+  vars_files:
+    - vars.yml
+  vars:
+    proxmox_root_password: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=20') }}"
+    project_dir: "{{ playbook_dir }}/proxmox_setup"
+  tasks:
+    # Cannot be run on a windows client-based OS:
+    # - name: Ensure Hyper-V feature is installed
+    #   ansible.windows.win_feature:
+    #     name: Microsoft-Hyper-V-All
+    #     state: present
+
+    - name: Create temporary directory on Linux host
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: directory
+      delegate_to: localhost
+
+    - name: Check if Proxmox VE ISO exists
+      ansible.builtin.stat:
+        path: "{{ project_dir }}/{{ iso_filename }}"
+      register: iso_stat
+      delegate_to: localhost
+      
+    - name: Download Proxmox VE ISO if it doesn't exist
+      ansible.builtin.get_url:
+        url: "{{ proxmox_iso_url }}"
+        dest: "{{ project_dir }}/{{ iso_filename }}"
+        validate_certs: false
+      when: not iso_stat.stat.exists
+      delegate_to: localhost
+
+    # - name: Ensure python3-toml is installed
+    #   ansible.builtin.apt:
+    #     name: python3-toml
+    #     state: present
+    #   become: yes
+    #   delegate_to: localhost
+
+    - name: Create answer file for Proxmox VE on Linux host
+      ansible.builtin.copy:
+        content: "{{ proxmox_answer | to_toml }}"
+        dest: "{{ project_dir }}/answer.toml"
+      delegate_to: localhost
+
+    # - name: Install proxmox-auto-install-assistant on control node
+    #   ansible.builtin.apt:
+    #     name: proxmox-auto-install-assistant
+    #     state: present
+    #   delegate_to: localhost
+    #   become: yes
+
+    - name: Check if prepared ISO exists
+      ansible.builtin.stat:
+        path: "{{ project_dir }}/prepared_{{ iso_filename }}"
+      register: prepared_iso_stat
+      delegate_to: localhost
+
+    - name: Prepare ISO for automated installation
+      ansible.builtin.command:
+        cmd: >
+          proxmox-auto-install-assistant prepare-iso 
+          {{ project_dir }}/{{ iso_filename }}
+          --fetch-from iso 
+          --answer-file {{ project_dir }}/answer.toml
+          -o {{ project_dir }}/prepared_{{ iso_filename }}
+      delegate_to: localhost
+      when: not prepared_iso_stat.stat.exists
+
+    - name: Copy prepared ISO to Hyper-V host
+      ansible.windows.win_copy:
+        src: "{{ project_dir }}/prepared_{{ iso_filename }}"
+        dest: "{{ prepared_iso_path }}"
+
+    - name: Create and configure Hyper-V VM for Proxmox
+      ansible.windows.win_shell: |
+        # Create the VM
+        New-VM -Name {{ vm_name }} -MemoryStartupBytes {{ vm_memory }} -NewVHDPath "{{ vm_disk_path }}" -NewVHDSizeBytes {{ vm_disk_size }} -Generation 2
+        Set-VM -Name {{ vm_name }} -ProcessorCount 2
+
+        # Add DVD drive with prepared ISO
+        Add-VMDvdDrive -VMName {{ vm_name }} -Path "{{ prepared_iso_path }}"
+
+        # Configure network
+        Connect-VMNetworkAdapter -VMName {{ vm_name }} -SwitchName "{{ switch_name }}"
+
+        # Configure firmware settings
+        $vm = Get-VM -Name {{ vm_name }}
+        Set-VMFirmware -VM $vm -EnableSecureBoot Off
+        $bootOrder = @(Get-VMDvdDrive -VM $vm) + (Get-VMHardDiskDrive -VM $vm)
+        Set-VMFirmware -VM $vm -BootOrder $bootOrder
+
+        # Start the VM
+        Start-VM -Name {{ vm_name }}
+
+    - name: Wait for Proxmox VE installation to complete
+      pause:
+        minutes: 15
+
+    - name: Configure Proxmox VE network settings
+      ansible.windows.win_shell: |
+        $vm = Get-VM -Name {{ vm_name }}
+        $vm | Get-VMNetworkAdapter | Set-VMNetworkAdapter -MacAddressSpoofing On
+        $vm | Set-VMNetworkAdapterVlan -Access -VlanId 100
+
+    - name: Display Proxmox root password
+      debug:
+        msg: "Proxmox root password: {{ proxmox_root_password }}"
+      no_log: true

@@ -1,0 +1,33 @@
+---
+- name: Delete Proxmox VE VM from Hyper-V
+  hosts: hyperv
+  become: yes
+  become_user: "null"
+  become_method: runas
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Stop the VM if it's running
+      ansible.windows.win_shell: |
+        $vm = Get-VM -Name {{ vm_name }} -ErrorAction SilentlyContinue
+        if ($vm -and $vm.State -eq 'Running') {
+          Stop-VM -Name {{ vm_name }} -Force
+        }
+
+    - name: Remove the VM
+      ansible.windows.win_shell: |
+        $vm = Get-VM -Name {{ vm_name }} -ErrorAction SilentlyContinue
+        if ($vm) {
+          Remove-VM -Name {{ vm_name }} -Force
+        }
+
+    - name: Remove the VM's files
+      ansible.windows.win_file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ vm_disk_path }}"
+
+    - name: Display completion message
+      debug:
+        msg: "The VM {{ vm_name }} and its associated files have been removed."
